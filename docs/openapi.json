@@ -1,0 +1,3677 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Service Booking & Management API",
+    "version": "2.0.0",
+    "description": "REST API for the Service Booking mobile app.\n\n**Authentication:** call `POST /auth/login`, copy `data.token`, press **Authorize** and paste the token (no `Bearer ` prefix).\n\n**Response format:** every success is `{ success: true, message, data }`; every error is `{ success: false, message, errors? }`.\n\n**Demo accounts (after `npm run seed`):** user `demo@kiculagbe.com` / `Demo@12345`, admin `admin@kiculagbe.com` / `Admin@12345`.\n\n**v2:** register now sends a 6-digit **email OTP** (Nodemailer); login is blocked until the email is verified. Bookings can be paid with **Stripe** (PaymentIntent + PaymentSheet). Customers can **review** completed bookings. Admins manage requests, busy time, services and see **monthly statistics** under `/admin/*`."
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "Current host"
+    },
+    {
+      "url": "http://localhost:5001/api/v1",
+      "description": "Local development"
+    }
+  ],
+  "tags": [
+    {
+      "name": "System"
+    },
+    {
+      "name": "Auth",
+      "description": "Registration and login"
+    },
+    {
+      "name": "Users",
+      "description": "Authenticated user profile"
+    },
+    {
+      "name": "Services",
+      "description": "Public service catalogue"
+    },
+    {
+      "name": "Appointments",
+      "description": "Bookings of the authenticated user"
+    },
+    {
+      "name": "AI Assistant",
+      "description": "Service recommendations and questions"
+    },
+    {
+      "name": "Reviews",
+      "description": "Customer reviews of completed bookings"
+    },
+    {
+      "name": "Payments",
+      "description": "Stripe payments"
+    },
+    {
+      "name": "Admin",
+      "description": "Admin only (role = admin)"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Health check",
+        "responses": {
+          "200": {
+            "description": "API is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "uptime": {
+                          "type": "number",
+                          "example": 123.45
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "OK",
+                  "data": {
+                    "uptime": 123.45
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Register (sends a verification code by email)",
+        "description": "Password rules: 8–72 characters, at least one letter and one number. Returns a JWT so the user is logged in immediately.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "email",
+                  "password"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 60,
+                    "example": "Rahim Uddin"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "example": "rahim@example.com"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "minLength": 8,
+                    "example": "Secret123"
+                  }
+                }
+              },
+              "example": {
+                "name": "Rahim Uddin",
+                "email": "rahim@example.com",
+                "password": "Secret123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Code sent. The account stays unverified until the code is confirmed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "email": {
+                          "type": "string",
+                          "example": "demo@example.com"
+                        },
+                        "requiresVerification": {
+                          "type": "boolean",
+                          "example": true
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "We sent a 6-digit code to demo@example.com",
+                  "data": {
+                    "email": "demo@example.com",
+                    "requiresVerification": true
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "An account with this email already exists"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Log in",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email",
+                  "password"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "example": "demo@kiculagbe.com"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "example": "Demo@12345"
+                  }
+                }
+              },
+              "example": {
+                "email": "demo@kiculagbe.com",
+                "password": "Demo@12345"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AuthResult"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Login successful",
+                  "data": {
+                    "user": {
+                      "id": "665e0b7d8a1c3f0011d2e3f4",
+                      "name": "Demo User",
+                      "email": "demo@kiculagbe.com",
+                      "phone": "+8801700000000",
+                      "role": "user",
+                      "createdAt": "2026-11-01T10:00:00.000Z",
+                      "updatedAt": "2026-11-01T10:00:00.000Z"
+                    },
+                    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Wrong email or password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Invalid email or password"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Email not verified (a new code was sent)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Please verify your email. We sent you a new code.",
+                  "code": "EMAIL_NOT_VERIFIED"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Log out",
+        "description": "JWTs are stateless: the client simply deletes its stored token.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Logged out",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Logged out successfully",
+                  "data": null
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/users/me": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get the current user",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": {
+                    "user": {
+                      "id": "665e0b7d8a1c3f0011d2e3f4",
+                      "name": "Demo User",
+                      "email": "demo@kiculagbe.com",
+                      "phone": "+8801700000000",
+                      "role": "user",
+                      "createdAt": "2026-11-01T10:00:00.000Z",
+                      "updatedAt": "2026-11-01T10:00:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Update profile",
+        "description": "Send `name`, `phone` or both. Send an empty `phone` to clear it. Email cannot be changed.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 60,
+                    "example": "Rahim U."
+                  },
+                  "phone": {
+                    "type": "string",
+                    "example": "+8801700000000"
+                  }
+                }
+              },
+              "example": {
+                "name": "Rahim U.",
+                "phone": "+8801700000000"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Profile updated successfully",
+                  "data": {
+                    "user": {
+                      "id": "665e0b7d8a1c3f0011d2e3f4",
+                      "name": "Demo User",
+                      "email": "demo@kiculagbe.com",
+                      "phone": "+8801700000000",
+                      "role": "user",
+                      "createdAt": "2026-11-01T10:00:00.000Z",
+                      "updatedAt": "2026-11-01T10:00:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/users/me/password": {
+      "put": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Change password",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "currentPassword",
+                  "newPassword"
+                ],
+                "properties": {
+                  "currentPassword": {
+                    "type": "string",
+                    "format": "password",
+                    "example": "Secret123"
+                  },
+                  "newPassword": {
+                    "type": "string",
+                    "format": "password",
+                    "description": "8–72 chars, a letter and a number",
+                    "example": "NewSecret456"
+                  }
+                }
+              },
+              "example": {
+                "currentPassword": "Secret123",
+                "newPassword": "NewSecret456"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Password changed successfully",
+                  "data": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Current password incorrect, or new password equals the old one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Current password is incorrect"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/services": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "List / search / filter services",
+        "description": "Public endpoint. Default sort is `popular` (featured first, then most booked).",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Matches name, description and category",
+            "schema": {
+              "type": "string",
+              "example": "massage"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "description": "Exact category (case-insensitive)",
+            "schema": {
+              "type": "string",
+              "example": "Fitness"
+            }
+          },
+          {
+            "name": "featured",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          },
+          {
+            "name": "minPrice",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "example": 500
+            }
+          },
+          {
+            "name": "maxPrice",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "example": 3000
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "popular",
+                "price_asc",
+                "price_desc",
+                "rating",
+                "newest"
+              ],
+              "default": "popular"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Services page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Service"
+                          }
+                        },
+                        "total": {
+                          "type": "integer",
+                          "example": 12
+                        },
+                        "page": {
+                          "type": "integer",
+                          "example": 1
+                        },
+                        "limit": {
+                          "type": "integer",
+                          "example": 50
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": {
+                    "items": [
+                      {
+                        "id": "665f1c2a9b1e4a0012a3b4c5",
+                        "name": "Full Body Massage",
+                        "description": "Relaxing 60-minute massage that relieves muscle tension and stress.",
+                        "price": 2500,
+                        "durationMinutes": 60,
+                        "image": "https://picsum.photos/seed/body-massage/800/600",
+                        "category": "Spa & Wellness",
+                        "isFeatured": true,
+                        "rating": 4.9,
+                        "bookingsCount": 210,
+                        "isActive": true
+                      }
+                    ],
+                    "total": 1,
+                    "page": 1,
+                    "limit": 50
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/services/categories": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "List service categories",
+        "responses": {
+          "200": {
+            "description": "Categories",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "categories": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": {
+                    "categories": [
+                      "Automotive",
+                      "Fitness",
+                      "Home Services",
+                      "Pet Care",
+                      "Salon",
+                      "Spa & Wellness",
+                      "Tech Support"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/services/{id}": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Get one service",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "MongoDB ObjectId (24 hex characters)",
+            "schema": {
+              "type": "string",
+              "example": "665f1c2a9b1e4a0012a3b4c5"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "service": {
+                          "$ref": "#/components/schemas/Service"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": {
+                    "service": {
+                      "id": "665f1c2a9b1e4a0012a3b4c5",
+                      "name": "Full Body Massage",
+                      "description": "Relaxing 60-minute massage that relieves muscle tension and stress.",
+                      "price": 2500,
+                      "durationMinutes": 60,
+                      "image": "https://picsum.photos/seed/body-massage/800/600",
+                      "category": "Spa & Wellness",
+                      "isFeatured": true,
+                      "rating": 4.9,
+                      "bookingsCount": 210,
+                      "isActive": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/services/{id}/availability": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Time slots for a date",
+        "description": "Returns every slot of the business day (default 09:00–18:00, every 30 min) that fits the service duration. `available` is false for past slots and slots that overlap an existing pending/confirmed booking. Dates up to 30 days ahead are allowed.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "MongoDB ObjectId (24 hex characters)",
+            "schema": {
+              "type": "string",
+              "example": "665f1c2a9b1e4a0012a3b4c5"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "description": "Business-local date, YYYY-MM-DD",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-11-18"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Slots",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "serviceId": {
+                          "type": "string"
+                        },
+                        "date": {
+                          "type": "string"
+                        },
+                        "durationMinutes": {
+                          "type": "integer"
+                        },
+                        "hours": {
+                          "type": "object",
+                          "properties": {
+                            "open": {
+                              "type": "string"
+                            },
+                            "close": {
+                              "type": "string"
+                            },
+                            "slotMinutes": {
+                              "type": "integer"
+                            }
+                          }
+                        },
+                        "slots": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Slot"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": {
+                    "serviceId": "665f1c2a9b1e4a0012a3b4c5",
+                    "date": "2026-11-18",
+                    "durationMinutes": 60,
+                    "hours": {
+                      "open": "09:00",
+                      "close": "18:00",
+                      "slotMinutes": 30
+                    },
+                    "slots": [
+                      {
+                        "time": "09:00",
+                        "startAt": "2026-11-18T03:00:00.000Z",
+                        "endAt": "2026-11-18T04:00:00.000Z",
+                        "available": true
+                      },
+                      {
+                        "time": "09:30",
+                        "startAt": "2026-11-18T03:30:00.000Z",
+                        "endAt": "2026-11-18T04:30:00.000Z",
+                        "available": false
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Past date, date too far ahead, or invalid format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "You cannot book a date in the past"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/appointments": {
+      "post": {
+        "tags": [
+          "Appointments"
+        ],
+        "summary": "Create an appointment",
+        "description": "`startAt` must be the `startAt` of an available slot from the availability endpoint. The booking starts as `pending`.\n\nRejected with **409** if the slot is already taken, or if the user already has an overlapping booking.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "serviceId",
+                  "startAt"
+                ],
+                "properties": {
+                  "serviceId": {
+                    "type": "string",
+                    "example": "665f1c2a9b1e4a0012a3b4c5"
+                  },
+                  "startAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-11-18T03:00:00.000Z"
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "example": "Please call before arriving"
+                  }
+                }
+              },
+              "example": {
+                "serviceId": "665f1c2a9b1e4a0012a3b4c5",
+                "startAt": "2026-11-18T03:00:00.000Z",
+                "notes": "Please call before arriving"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Booked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "appointment": {
+                          "$ref": "#/components/schemas/Appointment"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Appointment booked successfully",
+                  "data": {
+                    "appointment": {
+                      "id": "6660a1b2c3d4e5f600112233",
+                      "user": "665e0b7d8a1c3f0011d2e3f4",
+                      "service": {
+                        "id": "665f1c2a9b1e4a0012a3b4c5",
+                        "name": "Full Body Massage",
+                        "description": "Relaxing 60-minute massage that relieves muscle tension and stress.",
+                        "price": 2500,
+                        "durationMinutes": 60,
+                        "image": "https://picsum.photos/seed/body-massage/800/600",
+                        "category": "Spa & Wellness",
+                        "isFeatured": true,
+                        "rating": 4.9,
+                        "bookingsCount": 210,
+                        "isActive": true
+                      },
+                      "startAt": "2026-11-18T03:00:00.000Z",
+                      "endAt": "2026-11-18T04:00:00.000Z",
+                      "status": "pending",
+                      "notes": "Please call before arriving",
+                      "price": 2500,
+                      "isActive": true,
+                      "createdAt": "2026-11-17T09:00:00.000Z",
+                      "updatedAt": "2026-11-17T09:00:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Time is not a valid slot (off the grid, outside hours, in the past)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Selected time is outside the available time slots"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Slot taken or overlapping booking",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "This time slot is no longer available. Please choose another one."
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Appointments"
+        ],
+        "summary": "List my appointments",
+        "description": "`when=upcoming` returns pending/confirmed bookings (soonest first). `when=past` returns completed/cancelled bookings (latest first). Finished bookings are moved to `completed` automatically.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "when",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "upcoming",
+                "past"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "confirmed",
+                "cancelled",
+                "completed"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Appointments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Appointment"
+                          }
+                        },
+                        "total": {
+                          "type": "integer",
+                          "example": 1
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": {
+                    "items": [
+                      {
+                        "id": "6660a1b2c3d4e5f600112233",
+                        "user": "665e0b7d8a1c3f0011d2e3f4",
+                        "service": {
+                          "id": "665f1c2a9b1e4a0012a3b4c5",
+                          "name": "Full Body Massage",
+                          "description": "Relaxing 60-minute massage that relieves muscle tension and stress.",
+                          "price": 2500,
+                          "durationMinutes": 60,
+                          "image": "https://picsum.photos/seed/body-massage/800/600",
+                          "category": "Spa & Wellness",
+                          "isFeatured": true,
+                          "rating": 4.9,
+                          "bookingsCount": 210,
+                          "isActive": true
+                        },
+                        "startAt": "2026-11-18T03:00:00.000Z",
+                        "endAt": "2026-11-18T04:00:00.000Z",
+                        "status": "pending",
+                        "notes": "Please call before arriving",
+                        "price": 2500,
+                        "isActive": true,
+                        "createdAt": "2026-11-17T09:00:00.000Z",
+                        "updatedAt": "2026-11-17T09:00:00.000Z"
+                      }
+                    ],
+                    "total": 1
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/appointments/{id}": {
+      "get": {
+        "tags": [
+          "Appointments"
+        ],
+        "summary": "Get one of my appointments",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "MongoDB ObjectId (24 hex characters)",
+            "schema": {
+              "type": "string",
+              "example": "665f1c2a9b1e4a0012a3b4c5"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Appointment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "appointment": {
+                          "$ref": "#/components/schemas/Appointment"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": {
+                    "appointment": {
+                      "id": "6660a1b2c3d4e5f600112233",
+                      "user": "665e0b7d8a1c3f0011d2e3f4",
+                      "service": {
+                        "id": "665f1c2a9b1e4a0012a3b4c5",
+                        "name": "Full Body Massage",
+                        "description": "Relaxing 60-minute massage that relieves muscle tension and stress.",
+                        "price": 2500,
+                        "durationMinutes": 60,
+                        "image": "https://picsum.photos/seed/body-massage/800/600",
+                        "category": "Spa & Wellness",
+                        "isFeatured": true,
+                        "rating": 4.9,
+                        "bookingsCount": 210,
+                        "isActive": true
+                      },
+                      "startAt": "2026-11-18T03:00:00.000Z",
+                      "endAt": "2026-11-18T04:00:00.000Z",
+                      "status": "pending",
+                      "notes": "Please call before arriving",
+                      "price": 2500,
+                      "isActive": true,
+                      "createdAt": "2026-11-17T09:00:00.000Z",
+                      "updatedAt": "2026-11-17T09:00:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/appointments/{id}/cancel": {
+      "patch": {
+        "tags": [
+          "Appointments"
+        ],
+        "summary": "Cancel my appointment",
+        "description": "Only appointments with status `pending` can be cancelled. The time slot becomes available again.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "MongoDB ObjectId (24 hex characters)",
+            "schema": {
+              "type": "string",
+              "example": "665f1c2a9b1e4a0012a3b4c5"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "appointment": {
+                          "$ref": "#/components/schemas/Appointment"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Appointment cancelled",
+                  "data": {
+                    "appointment": {
+                      "id": "6660a1b2c3d4e5f600112233",
+                      "user": "665e0b7d8a1c3f0011d2e3f4",
+                      "service": {
+                        "id": "665f1c2a9b1e4a0012a3b4c5",
+                        "name": "Full Body Massage",
+                        "description": "Relaxing 60-minute massage that relieves muscle tension and stress.",
+                        "price": 2500,
+                        "durationMinutes": 60,
+                        "image": "https://picsum.photos/seed/body-massage/800/600",
+                        "category": "Spa & Wellness",
+                        "isFeatured": true,
+                        "rating": 4.9,
+                        "bookingsCount": 210,
+                        "isActive": true
+                      },
+                      "startAt": "2026-11-18T03:00:00.000Z",
+                      "endAt": "2026-11-18T04:00:00.000Z",
+                      "status": "cancelled",
+                      "notes": "Please call before arriving",
+                      "price": 2500,
+                      "isActive": false,
+                      "createdAt": "2026-11-17T09:00:00.000Z",
+                      "updatedAt": "2026-11-17T09:00:00.000Z",
+                      "cancelledAt": "2026-11-17T10:00:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Only pending appointments can be cancelled (this one is confirmed)"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/ai/chat": {
+      "post": {
+        "tags": [
+          "AI Assistant"
+        ],
+        "summary": "Ask the service assistant",
+        "description": "Answers questions about services, prices and booking, and recommends services. Uses Gemini when `GEMINI_API_KEY` is set on the server, otherwise a built-in rule-based assistant (`source: \"fallback\"`). Limited to 15 requests per minute.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "message"
+                ],
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "example": "I want something relaxing under 3000"
+                  },
+                  "history": {
+                    "type": "array",
+                    "maxItems": 12,
+                    "description": "Previous turns (optional)",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "role",
+                        "text"
+                      ],
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "assistant"
+                          ]
+                        },
+                        "text": {
+                          "type": "string",
+                          "maxLength": 1000
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "example": {
+                "message": "I want something relaxing under 3000",
+                "history": [
+                  {
+                    "role": "user",
+                    "text": "hi"
+                  },
+                  {
+                    "role": "assistant",
+                    "text": "Hello! How can I help?"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Assistant reply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "reply": {
+                          "type": "string"
+                        },
+                        "suggestions": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Service"
+                          }
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "gemini",
+                            "fallback"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": {
+                    "reply": "I'd suggest Full Body Massage (৳2,500, 60 min). Tap the card below to book.",
+                    "suggestions": [
+                      {
+                        "id": "665f1c2a9b1e4a0012a3b4c5",
+                        "name": "Full Body Massage",
+                        "description": "Relaxing 60-minute massage that relieves muscle tension and stress.",
+                        "price": 2500,
+                        "durationMinutes": 60,
+                        "image": "https://picsum.photos/seed/body-massage/800/600",
+                        "category": "Spa & Wellness",
+                        "isFeatured": true,
+                        "rating": 4.9,
+                        "bookingsCount": 210,
+                        "isActive": true
+                      }
+                    ],
+                    "source": "fallback"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/auth/verify-otp": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Verify email with the 6-digit code",
+        "description": "Codes expire after 10 minutes, are single use and allow 5 wrong attempts.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email",
+                  "otp"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "example": "demo@example.com"
+                  },
+                  "otp": {
+                    "type": "string",
+                    "example": "482913"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Verified, session started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        },
+                        "token": {
+                          "type": "string",
+                          "example": "eyJhbGciOi..."
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Email verified",
+                  "data": {
+                    "user": {},
+                    "token": "eyJ..."
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Wrong or expired code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Incorrect code. 4 attempts left.",
+                  "code": "OTP_INVALID"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Locked after too many attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Too many incorrect attempts. Please request a new code.",
+                  "code": "OTP_LOCKED"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/resend-otp": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Send a new verification code (60 s cooldown)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "example": "demo@example.com"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generic answer (does not reveal if the email exists)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "nullable": true
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": null
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Cooldown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Please wait 42 seconds before requesting a new code",
+                  "code": "OTP_COOLDOWN"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/forgot-password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Email a password reset code",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "example": "demo@example.com"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generic answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "nullable": true
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/reset-password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Set a new password using the emailed code",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email",
+                  "otp",
+                  "newPassword"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "example": "demo@example.com"
+                  },
+                  "otp": {
+                    "type": "string",
+                    "example": "482913"
+                  },
+                  "newPassword": {
+                    "type": "string",
+                    "example": "NewPass123"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password reset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "nullable": true
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Password reset successfully. You can log in now.",
+                  "data": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Wrong or expired code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "This code has expired. Please request a new one.",
+                  "code": "OTP_EXPIRED"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reviews": {
+      "post": {
+        "tags": [
+          "Reviews"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Review a completed booking (once per booking)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "appointmentId",
+                  "rating"
+                ],
+                "properties": {
+                  "appointmentId": {
+                    "type": "string",
+                    "example": "665f1c2a9b1e4a0012a3b4c5"
+                  },
+                  "rating": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5,
+                    "example": 5
+                  },
+                  "comment": {
+                    "type": "string",
+                    "example": "Great service!"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Review saved; the service rating is recalculated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "review": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Thanks for your review!",
+                  "data": {
+                    "review": {
+                      "id": "665f1c2a9b1e4a0012a3b4c5",
+                      "rating": 5,
+                      "comment": "Great service!"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Booking not completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "You can review a service after your booking is completed"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already reviewed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "You have already reviewed this booking"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/services/{id}/reviews": {
+      "get": {
+        "tags": [
+          "Reviews"
+        ],
+        "summary": "Public reviews of a service",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "665f1c2a9b1e4a0012a3b4c5"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reviews, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": {
+                    "items": [
+                      {
+                        "id": "665f1c2a9b1e4a0012a3b4c5",
+                        "rating": 5,
+                        "comment": "Great!",
+                        "user": {
+                          "name": "Demo User"
+                        },
+                        "createdAt": "2026-11-10T10:00:00.000Z"
+                      }
+                    ],
+                    "total": 1,
+                    "page": 1,
+                    "limit": 20
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments/intent": {
+      "post": {
+        "tags": [
+          "Payments"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a Stripe PaymentIntent for a pending/confirmed booking",
+        "description": "Price (BDT) is converted to `PAYMENT_CURRENCY` using `BDT_PER_CURRENCY_UNIT`. The app passes `clientSecret` to Stripe's PaymentSheet.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "appointmentId"
+                ],
+                "properties": {
+                  "appointmentId": {
+                    "type": "string",
+                    "example": "665f1c2a9b1e4a0012a3b4c5"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Intent created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "clientSecret": {
+                          "type": "string",
+                          "example": "pi_..._secret_..."
+                        },
+                        "paymentIntentId": {
+                          "type": "string",
+                          "example": "pi_123"
+                        },
+                        "publishableKey": {
+                          "type": "string",
+                          "example": "pk_..."
+                        },
+                        "amount": {
+                          "type": "integer",
+                          "example": 2083
+                        },
+                        "currency": {
+                          "type": "string",
+                          "example": "usd"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": {
+                    "clientSecret": "pi_123_secret_abc",
+                    "paymentIntentId": "pi_123",
+                    "publishableKey": "pk_test_...",
+                    "amount": 2083,
+                    "currency": "usd"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already paid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "This booking is already paid"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Stripe not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Online payment is not configured on the server"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments/confirm": {
+      "post": {
+        "tags": [
+          "Payments"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Verify the payment with Stripe and mark the booking paid",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "appointmentId"
+                ],
+                "properties": {
+                  "appointmentId": {
+                    "type": "string",
+                    "example": "665f1c2a9b1e4a0012a3b4c5"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "appointment": {
+                          "$ref": "#/components/schemas/Appointment"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Payment successful",
+                  "data": {
+                    "appointment": {}
+                  }
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Not completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Payment not completed (status: requires_payment_method)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments/webhook": {
+      "post": {
+        "tags": [
+          "Payments"
+        ],
+        "summary": "Stripe webhook (payment_intent.succeeded). Signature verified with STRIPE_WEBHOOK_SECRET.",
+        "responses": {
+          "200": {
+            "description": "Received"
+          },
+          "400": {
+            "description": "Invalid signature"
+          }
+        }
+      }
+    },
+    "/admin/appointments": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "All customer bookings (requests)",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "confirmed",
+                "cancelled",
+                "completed"
+              ]
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "description": "YYYY-MM-DD",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "month",
+            "in": "query",
+            "description": "YYYY-MM (business time zone). Defaults to the current month.",
+            "schema": {
+              "type": "string",
+              "example": "2026-11"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Customer name or email",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bookings with customer details and per-status counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Appointment"
+                          }
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "counts": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": {
+                    "items": [],
+                    "total": 0,
+                    "page": 1,
+                    "limit": 30,
+                    "counts": {
+                      "pending": 3,
+                      "confirmed": 2,
+                      "cancelled": 1,
+                      "completed": 9
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "You do not have permission to do this"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/appointments/{id}/status": {
+      "patch": {
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Confirm, deny (cancel) or complete a booking",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "665f1c2a9b1e4a0012a3b4c5"
+            }
+          }
+        ],
+        "description": "pending → confirmed | cancelled; confirmed → completed | cancelled. Cancelling refunds a paid booking via Stripe and emails the customer (with the optional `reason`).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "cancelled",
+                      "completed"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "example": "Fully booked at that time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "appointment": {
+                          "$ref": "#/components/schemas/Appointment"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Appointment confirmed",
+                  "data": {
+                    "appointment": {}
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "Cannot change status from completed to confirmed"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "You do not have permission to do this"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/stats": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Monthly statistics",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "description": "YYYY-MM (business time zone). Defaults to the current month.",
+            "schema": {
+              "type": "string",
+              "example": "2026-11"
+            }
+          }
+        ],
+        "description": "`summary` = the selected month (by booking date; reviews by review date). `series` = that month plus the 5 before it.",
+        "responses": {
+          "200": {
+            "description": "Statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": {
+                    "month": "2026-11",
+                    "summary": {
+                      "total": 14,
+                      "pending": 3,
+                      "confirmed": 2,
+                      "completed": 8,
+                      "cancelled": 1,
+                      "reviews": 6,
+                      "avgRating": 4.6,
+                      "paidCount": 4,
+                      "revenue": 9800
+                    },
+                    "series": [
+                      {
+                        "month": "2026-11",
+                        "total": 14,
+                        "completed": 8,
+                        "reviews": 6,
+                        "avgRating": 4.6
+                      }
+                    ],
+                    "topServices": [
+                      {
+                        "name": "Full Body Massage",
+                        "bookings": 5
+                      }
+                    ],
+                    "overall": {
+                      "customers": 12,
+                      "activeServices": 12,
+                      "pendingRequests": 3
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "You do not have permission to do this"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/reviews": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "All reviews (optionally one month)",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "description": "YYYY-MM (business time zone). Defaults to the current month.",
+            "schema": {
+              "type": "string",
+              "example": "2026-11"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reviews",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": {
+                    "items": [],
+                    "total": 0
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "You do not have permission to do this"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/busy": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Upcoming busy (blocked) times",
+        "responses": {
+          "200": {
+            "description": "Busy blocks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": {
+                    "items": [],
+                    "total": 0
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "You do not have permission to do this"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Mark a time range as busy",
+        "description": "Customers cannot book overlapping slots. Omit `serviceId` to block every service. Existing bookings are not touched; `conflictingBookings` tells you how many overlap.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "date",
+                  "from",
+                  "to"
+                ],
+                "properties": {
+                  "date": {
+                    "type": "string",
+                    "example": "2026-11-25"
+                  },
+                  "from": {
+                    "type": "string",
+                    "example": "14:00"
+                  },
+                  "to": {
+                    "type": "string",
+                    "example": "18:00"
+                  },
+                  "serviceId": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "reason": {
+                    "type": "string",
+                    "example": "Staff training"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Marked as busy",
+                  "data": {
+                    "busy": {},
+                    "conflictingBookings": 0
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "You do not have permission to do this"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/busy/{id}": {
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Remove a busy block",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "665f1c2a9b1e4a0012a3b4c5"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "nullable": true
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Busy time removed",
+                  "data": null
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "You do not have permission to do this"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/services": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "All services including inactive ones",
+        "responses": {
+          "200": {
+            "description": "Services",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Success",
+                  "data": {
+                    "items": [],
+                    "total": 0
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "You do not have permission to do this"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a service",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "description",
+                  "category",
+                  "price",
+                  "durationMinutes"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "Hair Spa"
+                  },
+                  "description": {
+                    "type": "string",
+                    "example": "Deep conditioning treatment"
+                  },
+                  "category": {
+                    "type": "string",
+                    "example": "Salon"
+                  },
+                  "price": {
+                    "type": "number",
+                    "example": 1200
+                  },
+                  "durationMinutes": {
+                    "type": "integer",
+                    "example": 60
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "https://..."
+                  },
+                  "isFeatured": {
+                    "type": "boolean"
+                  },
+                  "isActive": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Service created",
+                  "data": {
+                    "service": {}
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "You do not have permission to do this"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/services/{id}": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Update a service (send only changed fields; isActive=false hides it)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "665f1c2a9b1e4a0012a3b4c5"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "Hair Spa"
+                  },
+                  "description": {
+                    "type": "string",
+                    "example": "Deep conditioning treatment"
+                  },
+                  "category": {
+                    "type": "string",
+                    "example": "Salon"
+                  },
+                  "price": {
+                    "type": "number",
+                    "example": 1200
+                  },
+                  "durationMinutes": {
+                    "type": "integer",
+                    "example": 60
+                  },
+                  "image": {
+                    "type": "string",
+                    "example": "https://..."
+                  },
+                  "isFeatured": {
+                    "type": "boolean"
+                  },
+                  "isActive": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Success"
+                    },
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "Service updated",
+                  "data": {
+                    "service": {}
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "success": false,
+                  "message": "You do not have permission to do this"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Paste the token returned by login/register."
+      }
+    },
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "admin"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isEmailVerified": {
+            "type": "boolean"
+          }
+        },
+        "example": {
+          "id": "665e0b7d8a1c3f0011d2e3f4",
+          "name": "Demo User",
+          "email": "demo@kiculagbe.com",
+          "phone": "+8801700000000",
+          "role": "user",
+          "createdAt": "2026-11-01T10:00:00.000Z",
+          "updatedAt": "2026-11-01T10:00:00.000Z"
+        }
+      },
+      "AuthResult": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/User"
+          },
+          "token": {
+            "type": "string",
+            "description": "JWT, valid for 7 days by default"
+          }
+        }
+      },
+      "Service": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "price": {
+            "type": "number",
+            "description": "BDT"
+          },
+          "durationMinutes": {
+            "type": "integer"
+          },
+          "image": {
+            "type": "string",
+            "format": "uri"
+          },
+          "category": {
+            "type": "string"
+          },
+          "isFeatured": {
+            "type": "boolean"
+          },
+          "rating": {
+            "type": "number"
+          },
+          "bookingsCount": {
+            "type": "integer"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        },
+        "example": {
+          "id": "665f1c2a9b1e4a0012a3b4c5",
+          "name": "Full Body Massage",
+          "description": "Relaxing 60-minute massage that relieves muscle tension and stress.",
+          "price": 2500,
+          "durationMinutes": 60,
+          "image": "https://picsum.photos/seed/body-massage/800/600",
+          "category": "Spa & Wellness",
+          "isFeatured": true,
+          "rating": 4.9,
+          "bookingsCount": 210,
+          "isActive": true
+        }
+      },
+      "Slot": {
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "string",
+            "example": "09:00",
+            "description": "Business-local start time"
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "available": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Appointment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "user": {
+            "type": "string",
+            "description": "User id"
+          },
+          "service": {
+            "$ref": "#/components/schemas/Service"
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "confirmed",
+              "cancelled",
+              "completed"
+            ]
+          },
+          "notes": {
+            "type": "string"
+          },
+          "price": {
+            "type": "number",
+            "description": "Price snapshot at booking time"
+          },
+          "cancelledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "true while pending or confirmed"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "adminNote": {
+            "type": "string",
+            "description": "Reason when the admin denied the booking"
+          },
+          "paymentStatus": {
+            "type": "string",
+            "enum": [
+              "unpaid",
+              "paid",
+              "refunded",
+              "refund_failed"
+            ]
+          },
+          "reviewed": {
+            "type": "boolean"
+          }
+        },
+        "example": {
+          "id": "6660a1b2c3d4e5f600112233",
+          "user": "665e0b7d8a1c3f0011d2e3f4",
+          "service": {
+            "id": "665f1c2a9b1e4a0012a3b4c5",
+            "name": "Full Body Massage",
+            "description": "Relaxing 60-minute massage that relieves muscle tension and stress.",
+            "price": 2500,
+            "durationMinutes": 60,
+            "image": "https://picsum.photos/seed/body-massage/800/600",
+            "category": "Spa & Wellness",
+            "isFeatured": true,
+            "rating": 4.9,
+            "bookingsCount": 210,
+            "isActive": true
+          },
+          "startAt": "2026-11-18T03:00:00.000Z",
+          "endAt": "2026-11-18T04:00:00.000Z",
+          "status": "pending",
+          "notes": "Please call before arriving",
+          "price": 2500,
+          "isActive": true,
+          "createdAt": "2026-11-17T09:00:00.000Z",
+          "updatedAt": "2026-11-17T09:00:00.000Z"
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "message": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing, invalid or expired token",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Authentication required"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Resource not found"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Validation failed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Enter a valid email address",
+              "errors": [
+                {
+                  "field": "email",
+                  "message": "Enter a valid email address"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Rate limit reached",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Too many requests, please try again later."
+            }
+          }
+        }
+      }
+    }
+  }
+}
