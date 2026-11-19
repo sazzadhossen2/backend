@@ -50,7 +50,11 @@ export const openapi = {
       "**Demo accounts (after `npm run seed`):** user `demo@kiculagbe.com` / `Demo@12345`, admin `admin@kiculagbe.com` / `Admin@12345`.",
     ].join("\n"),
   },
-  servers: [{ url: "/api/v1", description: "Current host" }, { url: "http://localhost:5001/api/v1", description: "Local development" }],
+  servers: [
+    { url: "https://backend-9cbi.onrender.com/api/v1", description: "Render production" },
+    { url: "/api/v1", description: "Current host" },
+    { url: "http://localhost:5001/api/v1", description: "Local development" },
+  ],
   tags: [
     { name: "System" },
     { name: "Auth", description: "Registration and login" },

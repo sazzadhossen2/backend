@@ -7,6 +7,10 @@
   },
   "servers": [
     {
+      "url": "https://backend-9cbi.onrender.com/api/v1",
+      "description": "Render production"
+    },
+    {
       "url": "/api/v1",
       "description": "Current host"
     },
