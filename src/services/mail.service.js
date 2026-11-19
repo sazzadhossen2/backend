@@ -6,10 +6,13 @@ let transporter = null;
 const getTransporter = () => {
   if (!config.mail.user || !config.mail.pass) return null;
   transporter ||= nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
+    host: config.mail.host,
+    port: config.mail.port,
+    secure: config.mail.secure,
     auth: { user: config.mail.user, pass: config.mail.pass },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
   return transporter;
 };

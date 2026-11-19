@@ -35,6 +35,11 @@ export const config = {
     user: process.env.SMTP_USER || "",
     // Google app passwords are shown with spaces ("abcd efgh ijkl mnop"); SMTP wants them without.
     pass: (process.env.SMTP_PASS || "").replace(/\s+/g, ""),
+    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    port: num(process.env.SMTP_PORT, 465),
+    secure: process.env.SMTP_SECURE
+      ? process.env.SMTP_SECURE.toLowerCase() === "true"
+      : num(process.env.SMTP_PORT, 465) === 465,
     fromName: process.env.MAIL_FROM_NAME || "KicuLagbe",
   },
   otp: {
